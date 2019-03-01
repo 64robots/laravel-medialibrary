@@ -3,15 +3,14 @@
 namespace Spatie\MediaLibrary\ResponsiveImages\WidthCalculator;
 
 use Illuminate\Support\Collection;
-use Spatie\Image\Image;
-use Spatie\MediaLibrary\ResponsiveImages\WidthCalculator\WidthCalculator;
+use Spatie\MediaLibrary\Helpers\ImageFactory;
 
 class FileSizeOptimizedWidthCalculator implements WidthCalculator
 {
     public function calculateWidthsFromFile(string $imagePath): Collection
     {
-        $image = Image::load($imagePath);
-        
+        $image = ImageFactory::load($imagePath);
+
         $width = $image->getWidth();
         $height = $image->getHeight();
         $fileSize = filesize($imagePath);
@@ -26,7 +25,7 @@ class FileSizeOptimizedWidthCalculator implements WidthCalculator
         $targetWidths->push($width);
 
         $ratio = $height / $width;
-        $area = $width * $width * $ratio;
+        $area = $height * $width;
 
         $predictedFileSize = $fileSize;
         $pixelPrice = $predictedFileSize / $area;
@@ -34,7 +33,7 @@ class FileSizeOptimizedWidthCalculator implements WidthCalculator
         while (true) {
             $predictedFileSize *= 0.7;
 
-            $newWidth = (int)floor(sqrt(($predictedFileSize / $pixelPrice) / $ratio));
+            $newWidth = (int) floor(sqrt(($predictedFileSize / $pixelPrice) / $ratio));
 
             if ($this->finishedCalculating($predictedFileSize, $newWidth)) {
                 return $targetWidths;

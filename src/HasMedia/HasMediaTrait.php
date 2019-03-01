@@ -4,9 +4,8 @@ namespace Spatie\MediaLibrary\HasMedia;
 
 use DateTimeInterface;
 use Illuminate\Http\File;
-use Spatie\MediaLibrary\Models\Media;
 use Illuminate\Support\Collection;
-use Spatie\MediaLibrary\MediaCollection\MediaCollection;
+use Spatie\MediaLibrary\Models\Media;
 use Spatie\MediaLibrary\MediaRepository;
 use Illuminate\Support\Facades\Validator;
 use Spatie\MediaLibrary\FileAdder\FileAdder;
@@ -16,6 +15,7 @@ use Spatie\MediaLibrary\FileAdder\FileAdderFactory;
 use Spatie\MediaLibrary\Events\CollectionHasBeenCleared;
 use Spatie\MediaLibrary\Exceptions\MediaCannotBeDeleted;
 use Spatie\MediaLibrary\Exceptions\MediaCannotBeUpdated;
+use Spatie\MediaLibrary\MediaCollection\MediaCollection;
 use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\UnreachableUrl;
 use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\InvalidBase64Data;
 use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\MimeTypeNotAllowed;
@@ -41,8 +41,8 @@ trait HasMediaTrait
                 return;
             }
 
-            if (in_array(SoftDeletes::class, trait_uses_recursive($entity))) {
-                if (!$entity->forceDeleting) {
+            if (in_array(SoftDeletes::class, class_uses_recursive($entity))) {
+                if (! $entity->forceDeleting) {
                     return;
                 }
             }
@@ -54,7 +54,7 @@ trait HasMediaTrait
     /**
      * Set the polymorphic relation.
      *
-     * @return mixed
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
      */
     public function media()
     {
@@ -119,19 +119,30 @@ trait HasMediaTrait
      */
     public function addMediaFromUrl(string $url, ...$allowedMimeTypes)
     {
-        if (!$stream = @fopen($url, 'r')) {
+        if (! $stream = @fopen($url, 'r')) {
             throw UnreachableUrl::create($url);
         }
 
-        $tmpFile = tempnam(sys_get_temp_dir(), 'media-library');
-        file_put_contents($tmpFile, $stream);
+        $temporaryFile = tempnam(sys_get_temp_dir(), 'media-library');
+        file_put_contents($temporaryFile, $stream);
 
-        $this->guardAgainstInvalidMimeType($tmpFile, $allowedMimeTypes);
+        $this->guardAgainstInvalidMimeType($temporaryFile, $allowedMimeTypes);
 
         $filename = basename(parse_url($url, PHP_URL_PATH));
+        $filename = str_replace('%20', ' ', $filename);
+
+        if ($filename === '') {
+            $filename = 'file';
+        }
+
+        $mediaExtension = explode('/', mime_content_type($temporaryFile));
+
+        if (! str_contains($filename, '.')) {
+            $filename = "{$filename}.{$mediaExtension[1]}";
+        }
 
         return app(FileAdderFactory::class)
-            ->create($this, $tmpFile)
+            ->create($this, $temporaryFile)
             ->usingName(pathinfo($filename, PATHINFO_FILENAME))
             ->usingFileName($filename);
     }
@@ -160,7 +171,7 @@ trait HasMediaTrait
             throw InvalidBase64Data::create();
         }
 
-        // decoding and then reeconding should not change the data
+        // decoding and then reencoding should not change the data
         if (base64_encode(base64_decode($base64data)) !== $base64data) {
             throw InvalidBase64Data::create();
         }
@@ -227,7 +238,7 @@ trait HasMediaTrait
     {
         $media = $this->getFirstMedia($collectionName);
 
-        if (!$media) {
+        if (! $media) {
             return '';
         }
 
@@ -243,7 +254,7 @@ trait HasMediaTrait
     {
         $media = $this->getFirstMedia($collectionName);
 
-        if (!$media) {
+        if (! $media) {
             return '';
         }
 
@@ -259,7 +270,7 @@ trait HasMediaTrait
     {
         $media = $this->getFirstMedia($collectionName);
 
-        if (!$media) {
+        if (! $media) {
             return '';
         }
 
@@ -287,7 +298,7 @@ trait HasMediaTrait
                 $mediaClass = config('medialibrary.media_model');
                 $currentMedia = $mediaClass::findOrFail($newMediaItem['id']);
 
-                if ($currentMedia->collection_name != $collectionName) {
+                if ($currentMedia->collection_name !== $collectionName) {
                     throw MediaCannotBeUpdated::doesNotBelongToCollection($collectionName, $currentMedia);
                 }
 
@@ -341,7 +352,7 @@ trait HasMediaTrait
      * Remove all media in the given collection except some.
      *
      * @param string $collectionName
-     * @param \Spatie\MediaLibrary\Media[]|\Illuminate\Support\Collection $excludedMedia
+     * @param \Spatie\MediaLibrary\Models\Media[]|\Illuminate\Support\Collection $excludedMedia
      *
      * @return $this
      */
@@ -386,7 +397,7 @@ trait HasMediaTrait
 
         $media = $this->media->find($mediaId);
 
-        if (!$media) {
+        if (! $media) {
             throw MediaCannotBeDeleted::doesNotBelongToModel($mediaId, $this);
         }
 
@@ -429,7 +440,7 @@ trait HasMediaTrait
     /**
      * Determines if the media files should be preserved when the media object gets deleted.
      *
-     * @return \Spatie\MediaLibrary\Media
+     * @return bool
      */
     public function shouldDeletePreservingMedia()
     {
@@ -490,7 +501,7 @@ trait HasMediaTrait
 
         $validation = Validator::make(
             ['file' => new File($file)],
-            ['file' => 'mimetypes:' . implode(',', $allowedMimeTypes)]
+            ['file' => 'mimetypes:'.implode(',', $allowedMimeTypes)]
         );
 
         if ($validation->fails()) {

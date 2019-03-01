@@ -2,8 +2,8 @@
 
 namespace Spatie\MediaLibrary\Tests\Feature\Commands;
 
-use Spatie\MediaLibrary\Tests\TestCase;
 use Illuminate\Support\Facades\Artisan;
+use Spatie\MediaLibrary\Tests\TestCase;
 
 class RegenerateCommandTest extends TestCase
 {
@@ -40,9 +40,9 @@ class RegenerateCommandTest extends TestCase
             ->addMedia($this->getTestFilesDirectory('test.png'))
             ->toMediaCollection('images');
 
-        $derivedMissingImage = $this->getMediaDirectory("{$mediaMissing->id}/conversions/test-thumb.jpg");
-
         $derivedImageExists = $this->getMediaDirectory("{$mediaExists->id}/conversions/test-thumb.jpg");
+
+        $derivedMissingImage = $this->getMediaDirectory("{$mediaMissing->id}/conversions/test-thumb.jpg");
 
         $existsCreatedAt = filemtime($derivedImageExists);
 
@@ -153,6 +153,33 @@ class RegenerateCommandTest extends TestCase
         Artisan::call('medialibrary:regenerate', ['--ids' => [2]]);
 
         $this->assertFileNotExists($derivedImage);
+        $this->assertFileExists($derivedImage2);
+    }
+
+    /** @test */
+    public function it_can_regenerate_files_by_comma_separated_media_ids()
+    {
+        $media = $this->testModelWithConversion
+            ->addMedia($this->getTestFilesDirectory('test.jpg'))
+            ->preservingOriginal()
+            ->toMediaCollection('images');
+
+        $media2 = $this->testModelWithConversion
+            ->addMedia($this->getTestFilesDirectory('test.jpg'))
+            ->toMediaCollection('images');
+
+        $derivedImage = $this->getMediaDirectory("{$media->id}/conversions/test-thumb.jpg");
+        $derivedImage2 = $this->getMediaDirectory("{$media2->id}/conversions/test-thumb.jpg");
+
+        unlink($derivedImage);
+        unlink($derivedImage2);
+
+        $this->assertFileNotExists($derivedImage);
+        $this->assertFileNotExists($derivedImage2);
+
+        Artisan::call('medialibrary:regenerate', ['--ids' => ['1,2']]);
+
+        $this->assertFileExists($derivedImage);
         $this->assertFileExists($derivedImage2);
     }
 

@@ -8,7 +8,7 @@ use Spatie\MediaLibrary\Tests\Support\TestModels\TestModelWithoutMediaConversion
 
 class DeleteMediaTest extends TestCase
 {
-    public function setUp()
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -36,6 +36,19 @@ class DeleteMediaTest extends TestCase
 
         $this->assertCount(3, $this->testModelWithoutMediaConversions->getMedia('default'));
         $this->assertCount(0, $this->testModelWithoutMediaConversions->getMedia('images'));
+    }
+
+    /** @test */
+    public function it_can_clear_the_default_collection()
+    {
+        $this->assertCount(3, $this->testModelWithoutMediaConversions->getMedia('default'));
+        $this->assertCount(3, $this->testModelWithoutMediaConversions->getMedia('images'));
+
+        $this->testModelWithoutMediaConversions->clearMediaCollection();
+        $this->testModelWithoutMediaConversions = $this->testModelWithoutMediaConversions->fresh();
+
+        $this->assertCount(0, $this->testModelWithoutMediaConversions->getMedia('default'));
+        $this->assertCount(3, $this->testModelWithoutMediaConversions->getMedia('images'));
     }
 
     /** @test */

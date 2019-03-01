@@ -3,7 +3,6 @@
 namespace Spatie\MediaLibrary\Models;
 
 use DateTimeInterface;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 use Spatie\MediaLibrary\Helpers\File;
@@ -14,18 +13,18 @@ use Illuminate\Contracts\Support\Responsable;
 use Spatie\MediaLibrary\Conversion\Conversion;
 use Spatie\MediaLibrary\Filesystem\Filesystem;
 use Spatie\MediaLibrary\Models\Concerns\IsSorted;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Spatie\MediaLibrary\Helpers\TemporaryDirectory;
 use Spatie\MediaLibrary\Conversion\ConversionCollection;
 use Spatie\MediaLibrary\ImageGenerators\FileTypes\Image;
-use Spatie\MediaLibrary\ResponsiveImages\ResponsiveImage;
-use Spatie\MediaLibrary\Uploads\Models\TemporaryUpload;
 use Spatie\MediaLibrary\UrlGenerator\UrlGeneratorFactory;
-use Spatie\MediaLibrary\ResponsiveImages\ResponsiveImages;
+use Spatie\MediaLibrary\Models\Traits\CustomMediaProperties;
 use Spatie\MediaLibrary\ResponsiveImages\RegisteredResponsiveImages;
 
 class Media extends Model implements Responsable, Htmlable
 {
-    use IsSorted;
+    use IsSorted,
+        CustomMediaProperties;
 
     const TYPE_OTHER = 'other';
 
@@ -195,6 +194,27 @@ class Media extends Model implements Responsable, Htmlable
         })->toArray();
     }
 
+    public function hasGeneratedConversion(string $conversionName): bool
+    {
+        $generatedConversions = $this->getGeneratedConversions();
+
+        return $generatedConversions[$conversionName] ?? false;
+    }
+
+    public function markAsConversionGenerated(string $conversionName, bool $generated): self
+    {
+        $this->setCustomProperty("generated_conversions.{$conversionName}", $generated);
+
+        $this->save();
+
+        return $this;
+    }
+
+    public function getGeneratedConversions(): Collection
+    {
+        return collect($this->getCustomProperty('generated_conversions', []));
+    }
+
     /**
      * Create an HTTP response that represents the object.
      *
@@ -208,7 +228,7 @@ class Media extends Model implements Responsable, Htmlable
             'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
             'Content-Type' => $this->mime_type,
             'Content-Length' => $this->size,
-            'Content-Disposition' => 'attachment; filename="' . $this->file_name . '"',
+            'Content-Disposition' => 'attachment; filename="'.$this->file_name.'"',
             'Pragma' => 'public',
         ];
 
@@ -230,7 +250,7 @@ class Media extends Model implements Responsable, Htmlable
 
     public function hasResponsiveImages(string $conversionName = ''): bool
     {
-        return count($this->getResponsiveImageUrls());
+        return count($this->getResponsiveImageUrls($conversionName)) > 0;
     }
 
     public function getSrcset(string $conversionName = ''): string
@@ -267,11 +287,11 @@ class Media extends Model implements Responsable, Htmlable
 
         $attributeString = collect($extraAttributes)
             ->map(function ($value, $name) {
-                return $name . '="' . $value . '"';
+                return $name.'="'.$value.'"';
             })->implode(' ');
 
         if (strlen($attributeString)) {
-            $attributeString = ' ' . $attributeString;
+            $attributeString = ' '.$attributeString;
         }
 
         $media = $this;
@@ -280,7 +300,7 @@ class Media extends Model implements Responsable, Htmlable
 
         $width = '';
 
-        if ($this->hasResponsiveImages()) {
+        if ($this->hasResponsiveImages($conversion)) {
             $viewName = config('medialibrary.responsive_images.use_tiny_placeholders')
                 ? 'responsiveImageWithPlaceholder'
                 : 'responsiveImage';
@@ -296,7 +316,7 @@ class Media extends Model implements Responsable, Htmlable
         ));
     }
 
-    public function move(HasMedia $model, $collectionName = 'default'): Media
+    public function move(HasMedia $model, $collectionName = 'default'): self
     {
         $newMedia = $this->copy($model, $collectionName);
 
@@ -305,7 +325,7 @@ class Media extends Model implements Responsable, Htmlable
         return $newMedia;
     }
 
-    public function copy(HasMedia $model, $collectionName = 'default'): Media
+    public function copy(HasMedia $model, $collectionName = 'default'): self
     {
         $temporaryDirectory = TemporaryDirectory::create();
 
@@ -316,9 +336,8 @@ class Media extends Model implements Responsable, Htmlable
         $newMedia = $model
             ->addMedia($temporaryFile)
             ->usingName($this->name)
+            ->withCustomProperties($this->custom_properties)
             ->toMediaCollection($collectionName);
-
-        $newMedia->custom_properties = $this->custom_properties;
 
         $temporaryDirectory->delete();
 

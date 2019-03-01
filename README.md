@@ -6,8 +6,8 @@
 [![StyleCI](https://styleci.io/repos/33916850/shield)](https://styleci.io/repos/33916850)
 [![Total Downloads](https://img.shields.io/packagist/dt/spatie/laravel-medialibrary.svg?style=flat-square)](https://packagist.org/packages/spatie/laravel-medialibrary)
 
-This Laravel >=5.5 package can associate all sorts of files with Eloquent models. It provides a
-simple API to work with. To learn all about it, head over to [the extensive documentation](https://docs.spatie.be/laravel-medialibrary/v6).
+This package can associate all sorts of files with Eloquent models. It provides a
+simple API to work with. To learn all about it, head over to [the extensive documentation](https://docs.spatie.be/laravel-medialibrary/).
 
 Here are a few short examples of what you can do:
 
@@ -39,14 +39,16 @@ Spatie is a webdesign agency in Antwerp, Belgium. You'll find an overview of all
 
 This version of the medialibrary is compatible with Laravel 5.5 and newer.
 
-If you use and older version of Laravel you can use an older version of the package. These aren't maintained anymore, but they should be pretty stable. We still accept small bugfixes.
+If you use an older version of Laravel you can use an older version of the package. These aren't maintained anymore, but they should be pretty stable. We still accept small bugfixes.
 
+
+- [Medialibrary v6 for Laravel 5.5 / PHP 7.0](https://docs.spatie.be/laravel-medialibrary/v6)
 - [Medialibrary v5 for Laravel 5.4](https://docs.spatie.be/laravel-medialibrary/v5)
 - [Medialibray v4 for Laravel 5.1 - 5.3](https://docs.spatie.be/laravel-medialibrary/v4)
 
 ## Documentation
 
-You'll find the documentation on [https://docs.spatie.be/laravel-medialibrary/v6](https://docs.spatie.be/laravel-medialibrary/v6).
+You'll find the documentation on [https://docs.spatie.be/laravel-medialibrary/v7](https://docs.spatie.be/laravel-medialibrary/v7).
 
 Find yourself stuck using the package? Found a bug? Do you have general questions or suggestions for improving the media library? Feel free to [create an issue on GitHub](https://github.com/spatie/laravel-medialibrary/issues), we'll try to address it as soon as possible.
 
@@ -62,7 +64,7 @@ For the creation of thumbnails of svg's or pdf's you should also install [Imagic
 You can install this package via composer using this command:
 
 ```bash
-composer require spatie/laravel-medialibrary:^6.0.0
+composer require "spatie/laravel-medialibrary:^7.0.0"
 ```
 
 The package will automatically register itself.
@@ -94,7 +96,7 @@ return [
      * The filesystems on which to store added files and derived images by default. Choose
      * one or more of the filesystems you've configured in config/filesystems.php.
      */
-    'default_filesystem' => 'public',
+    'disk_name' => 'public',
 
     /*
      * The maximum file size of an item in bytes.
@@ -111,7 +113,7 @@ return [
     /*
      * The class name of the media model that should be used.
      */
-    'media_model' => Spatie\MediaLibrary\Media::class,
+    'media_model' => Spatie\MediaLibrary\Models\Media::class,
 
     /*
      * The engine that should perform the image conversions.
@@ -156,6 +158,7 @@ return [
      */
     'image_generators' => [
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Image::class,
+        Spatie\MediaLibrary\ImageGenerators\FileTypes\Webp::class,
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Pdf::class,
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Svg::class,
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Video::class,

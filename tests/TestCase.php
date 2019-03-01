@@ -4,8 +4,8 @@ namespace Spatie\MediaLibrary\Tests;
 
 use File;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Artisan;
 use Dotenv\Dotenv;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Database\Schema\Blueprint;
 use Orchestra\Testbench\TestCase as Orchestra;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -35,7 +35,7 @@ abstract class TestCase extends Orchestra
     /** @var \Spatie\MediaLibrary\Tests\Support\TestModels\TestModelWithResponsiveImages */
     protected $testModelWithResponsiveImages;
 
-    public function setUp()
+    public function setUp(): void
     {
         $this->loadEnvironmentVariables();
 
@@ -187,6 +187,16 @@ abstract class TestCase extends Orchestra
     public function getTestSvg()
     {
         return $this->getTestFilesDirectory('test.svg');
+    }
+
+    public function getTestWebp()
+    {
+        return $this->getTestFilesDirectory('test.webp');
+    }
+
+    public function getTestMp4()
+    {
+        return $this->getTestFilesDirectory('test.mp4');
     }
 
     private function setUpMorphMap()

@@ -3,16 +3,15 @@
 namespace Spatie\MediaLibrary\Conversion;
 
 use Illuminate\Support\Arr;
-use Spatie\MediaLibrary\HasMedia\HasMedia;
-use Spatie\MediaLibrary\Models\Media;
 use Spatie\Image\Manipulations;
 use Illuminate\Support\Collection;
+use Spatie\MediaLibrary\Models\Media;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Spatie\MediaLibrary\Exceptions\InvalidConversion;
 
 class ConversionCollection extends Collection
 {
-    /** @var \Spatie\MediaLibrary\Media  */
+    /** @var \Spatie\MediaLibrary\Models\Media */
     protected $media;
 
     /**
@@ -52,7 +51,7 @@ class ConversionCollection extends Collection
      *
      * @throws \Spatie\MediaLibrary\Exceptions\InvalidConversion
      */
-    public function getByName(string $name)
+    public function getByName(string $name): Conversion
     {
         $conversion = $this->first(function (Conversion $conversion) use ($name) {
             return $conversion->getName() === $name;
@@ -153,7 +152,7 @@ class ConversionCollection extends Collection
         $fileName = pathinfo($this->media->file_name, PATHINFO_FILENAME);
 
         return $this->getConversions($collectionName)->map(function (Conversion $conversion) use ($fileName) {
-            return "{$fileName}-{$conversion->getName()}.{$conversion->getResultExtension()}";
+            return $conversion->getConversionFile($fileName);
         });
     }
 }

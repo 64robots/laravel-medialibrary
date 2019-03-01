@@ -2,19 +2,17 @@
 
 namespace Spatie\MediaLibrary\ResponsiveImages;
 
+use Spatie\MediaLibrary\Helpers\File;
 use Spatie\MediaLibrary\Models\Media;
+use Spatie\MediaLibrary\Helpers\ImageFactory;
+use Spatie\MediaLibrary\Conversion\Conversion;
 use Spatie\MediaLibrary\Filesystem\Filesystem;
 use Spatie\MediaLibrary\Helpers\TemporaryDirectory;
-use Spatie\MediaLibrary\PathGenerator\PathGenerator;
-use Spatie\MediaLibrary\ResponsiveImages\WidthCalculator\WidthCalculator;
-use Spatie\Image\Image;
-use Spatie\MediaLibrary\PathGenerator\PathGeneratorFactory;
-use Spatie\TemporaryDirectory\TemporaryDirectory as BaseTemporaryDirectory;
-use Spatie\MediaLibrary\Conversion\Conversion;
-use Spatie\MediaLibrary\ResponsiveImages\ResponsiveImage;
-use Spatie\MediaLibrary\ResponsiveImages\TinyPlaceholderGenerator\TinyPlaceholderGenerator;
+use Spatie\MediaLibrary\Events\ResponsiveImagesGenerated;
 use Spatie\MediaLibrary\ResponsiveImages\Exceptions\InvalidTinyJpg;
-use Spatie\MediaLibrary\Helpers\File;
+use Spatie\MediaLibrary\ResponsiveImages\WidthCalculator\WidthCalculator;
+use Spatie\TemporaryDirectory\TemporaryDirectory as BaseTemporaryDirectory;
+use Spatie\MediaLibrary\ResponsiveImages\TinyPlaceholderGenerator\TinyPlaceholderGenerator;
 
 class ResponsiveImageGenerator
 {
@@ -45,12 +43,16 @@ class ResponsiveImageGenerator
 
         $baseImage = app(Filesystem::class)->copyFromMediaLibrary(
             $media,
-            $temporaryDirectory->path(str_random(16) . '.' . $media->extension)
+            $temporaryDirectory->path(str_random(16).'.'.$media->extension)
         );
+
+        $media = $this->cleanResponsiveImages($media);
 
         foreach ($this->widthCalculator->calculateWidthsFromFile($baseImage) as $width) {
             $this->generateResponsiveImage($media, $baseImage, 'medialibrary_original', $width, $temporaryDirectory);
         }
+
+        event(new ResponsiveImagesGenerated($media));
 
         $this->generateTinyJpg($media, $baseImage, 'medialibrary_original', $temporaryDirectory);
 
@@ -60,6 +62,8 @@ class ResponsiveImageGenerator
     public function generateResponsiveImagesForConversion(Media $media, Conversion $conversion, string $baseImage)
     {
         $temporaryDirectory = TemporaryDirectory::create();
+
+        $media = $this->cleanResponsiveImages($media, $conversion->getName());
 
         foreach ($this->widthCalculator->calculateWidthsFromFile($baseImage) as $width) {
             $this->generateResponsiveImage($media, $baseImage, $conversion->getName(), $width, $temporaryDirectory);
@@ -81,13 +85,12 @@ class ResponsiveImageGenerator
 
         $tempDestination = $temporaryDirectory->path($responsiveImagePath);
 
-        Image::load($baseImage)
-            ->useImageDriver(config('medialibrary.image_driver'))
+        ImageFactory::load($baseImage)
             ->optimize()
             ->width($targetWidth)
             ->save($tempDestination);
 
-        $responsiveImageHeight = Image::load($tempDestination)->getHeight();
+        $responsiveImageHeight = ImageFactory::load($tempDestination)->getHeight();
 
         $finalImageFileName = $this->appendToFileName($responsiveImagePath, "_{$responsiveImageHeight}");
 
@@ -110,9 +113,9 @@ class ResponsiveImageGenerator
 
         $tinyImageDataBase64 = base64_encode(file_get_contents($tempDestination));
 
-        $tinyImageBase64 = 'data:image/jpeg;base64,' . $tinyImageDataBase64;
+        $tinyImageBase64 = 'data:image/jpeg;base64,'.$tinyImageDataBase64;
 
-        $originalImage = Image::load($originalImagePath);
+        $originalImage = ImageFactory::load($originalImagePath);
 
         $originalImageWidth = $originalImage->getWidth();
 
@@ -124,7 +127,7 @@ class ResponsiveImageGenerator
             'tinyImageBase64'
         ));
 
-        $base64Svg = 'data:image/svg+xml;base64,' . base64_encode($svg);
+        $base64Svg = 'data:image/svg+xml;base64,'.base64_encode($svg);
 
         ResponsiveImage::registerTinySvg($media, $base64Svg, $conversionName);
     }
@@ -135,7 +138,7 @@ class ResponsiveImageGenerator
 
         $extension = pathinfo($filePath, PATHINFO_EXTENSION);
 
-        return $baseName . $suffix . '.' . $extension;
+        return $baseName.$suffix.'.'.$extension;
     }
 
     protected function guardAgainstInvalidTinyPlaceHolder(string $tinyPlaceholderPath)
@@ -149,5 +152,16 @@ class ResponsiveImageGenerator
         if ($mimeType !== 'image/jpeg') {
             throw InvalidTinyJpg::hasWrongMimeType($tinyPlaceholderPath);
         }
+    }
+
+    protected function cleanResponsiveImages(Media $media, string $conversionName = 'medialibrary_original') : Media
+    {
+        $responsiveImages = $media->responsive_images;
+        $responsiveImages[$conversionName]['urls'] = [];
+        $media->responsive_images = $responsiveImages;
+
+        $this->filesystem->removeResponsiveImages($media, $conversionName);
+
+        return $media;
     }
 }

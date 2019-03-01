@@ -2,23 +2,22 @@
 
 namespace Spatie\MediaLibrary\FileAdder;
 
-use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\FileUnacceptableForCollection;
-use Spatie\MediaLibrary\File as PendingFile;
-use Spatie\MediaLibrary\Models\Media;
 use Spatie\MediaLibrary\Helpers\File;
+use Spatie\MediaLibrary\Models\Media;
 use Illuminate\Database\Eloquent\Model;
-use Spatie\MediaLibrary\Filesystem\Filesystem;
-use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded;
 use Spatie\MediaLibrary\HasMedia\HasMedia;
-use Spatie\MediaLibrary\MediaCollection\MediaCollection;
+use Spatie\MediaLibrary\File as PendingFile;
+use Spatie\MediaLibrary\Filesystem\Filesystem;
+use Spatie\MediaLibrary\Jobs\GenerateResponsiveImages;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Spatie\MediaLibrary\MediaCollection\MediaCollection;
 use Symfony\Component\HttpFoundation\File\File as SymfonyFile;
 use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\UnknownType;
 use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\FileIsTooBig;
 use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\DiskDoesNotExist;
 use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\FileDoesNotExist;
-use Spatie\MediaLibrary\Jobs\GenerateResponsiveImages;
 use Spatie\MediaLibrary\ImageGenerators\FileTypes\Image as ImageGenerator;
+use Spatie\MediaLibrary\Exceptions\FileCannotBeAdded\FileUnacceptableForCollection;
 
 class FileAdder
 {
@@ -60,6 +59,9 @@ class FileAdder
 
     /** @var bool */
     protected $generateResponsiveImages = false;
+
+    /** @var array */
+    protected $customHeaders = [];
 
     /**
      * @param Filesystem $fileSystem
@@ -105,7 +107,7 @@ class FileAdder
         }
 
         if ($file instanceof UploadedFile) {
-            $this->pathToFile = $file->getPath() . '/' . $file->getFilename();
+            $this->pathToFile = $file->getPath().'/'.$file->getFilename();
             $this->setFileName($file->getClientOriginalName());
             $this->mediaName = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
 
@@ -113,7 +115,7 @@ class FileAdder
         }
 
         if ($file instanceof SymfonyFile) {
-            $this->pathToFile = $file->getPath() . '/' . $file->getFilename();
+            $this->pathToFile = $file->getPath().'/'.$file->getFilename();
             $this->setFileName(pathinfo($file->getFilename(), PATHINFO_BASENAME));
             $this->mediaName = pathinfo($file->getFilename(), PATHINFO_FILENAME);
 
@@ -189,6 +191,8 @@ class FileAdder
 
     public function addCustomHeaders(array $customRemoteHeaders): self
     {
+        $this->customHeaders = $customRemoteHeaders;
+
         $this->filesystem->addCustomRemoteHeaders($customRemoteHeaders);
 
         return $this;
@@ -201,7 +205,7 @@ class FileAdder
 
     public function toMediaCollection(string $collectionName = 'default', string $diskName = ''): Media
     {
-        if (!is_file($this->pathToFile)) {
+        if (! is_file($this->pathToFile)) {
             throw FileDoesNotExist::create($this->pathToFile);
         }
 
@@ -210,6 +214,7 @@ class FileAdder
         }
 
         $mediaClass = config('medialibrary.media_model');
+        /** @var \Spatie\MediaLibrary\Models\Media $media */
         $media = new $mediaClass();
 
         $media->name = $this->mediaName;
@@ -234,6 +239,10 @@ class FileAdder
 
         $media->manipulations = $this->manipulations;
 
+        if (filled($this->customHeaders)) {
+            $media->setCustomHeaders($this->customHeaders);
+        }
+
         $media->fill($this->properties);
 
         $this->attachMedia($media);
@@ -255,7 +264,7 @@ class FileAdder
             }
         }
 
-        return config('medialibrary.default_filesystem');
+        return config('medialibrary.disk_name');
     }
 
     public function defaultSanitizer(string $fileName): string
@@ -272,7 +281,7 @@ class FileAdder
 
     protected function attachMedia(Media $media)
     {
-        if (!$this->subject->exists) {
+        if (! $this->subject->exists) {
             $this->subject->prepareToAttachMedia($media, $this);
 
             $class = get_class($this->subject);
@@ -289,7 +298,7 @@ class FileAdder
         $this->processMediaItem($this->subject, $media, $this);
     }
 
-    protected function processMediaItem(HasMedia $model, Media $media, FileAdder $fileAdder)
+    protected function processMediaItem(HasMedia $model, Media $media, self $fileAdder)
     {
         $this->guardAgainstDisallowedFileAdditions($media, $model);
 
@@ -297,12 +306,14 @@ class FileAdder
 
         $this->filesystem->add($fileAdder->pathToFile, $media, $fileAdder->fileName);
 
-        if (!$fileAdder->preserveOriginal) {
+        if (! $fileAdder->preserveOriginal) {
             unlink($fileAdder->pathToFile);
         }
 
         if ($this->generateResponsiveImages && (new ImageGenerator())->canConvert($media)) {
-            $job = new GenerateResponsiveImages($media);
+            $generateResponsiveImagesJobClass = config('medialibrary.jobs.generate_responsive_images', GenerateResponsiveImages::class);
+
+            $job = new $generateResponsiveImagesJobClass($media);
 
             if ($customQueue = config('medialibrary.queue_name')) {
                 $job->onQueue($customQueue);

@@ -3,10 +3,10 @@
 return [
 
     /*
-     * The filesystems on which to store added files and derived images by default. Choose
-     * one or more of the filesystems you've configured in config/filesystems.php.
+     * The disk on which to store added files and derived images by default. Choose
+     * one or more of the disks you've configured in config/filesystems.php.
      */
-    'default_filesystem' => 'public',
+    'disk_name' => 'public',
 
     /*
      * The maximum file size of an item in bytes.
@@ -21,7 +21,7 @@ return [
     'queue_name' => '',
 
     /*
-     * The class names of the models that should be used.
+     * The fully qualified class name of the media model.
      */
     'media_model' => Spatie\MediaLibrary\Models\Media::class,
 
@@ -57,13 +57,13 @@ return [
         */
         'width_calculator' => Spatie\MediaLibrary\ResponsiveImages\WidthCalculator\FileSizeOptimizedWidthCalculator::class,
 
-        /**
+        /*
          * By default rendering media to a responsive image will add some javascript and a tiny placeholder.
          * This ensures that the browser can already determine the correct layout.
          */
         'use_tiny_placeholders' => true,
 
-        /**
+        /*
          * This class will generate the tiny placeholder used for progressive image loading. By default
          * the medialibrary will use a tiny blurred jpg image.
          */
@@ -113,6 +113,7 @@ return [
      */
     'image_generators' => [
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Image::class,
+        Spatie\MediaLibrary\ImageGenerators\FileTypes\Webp::class,
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Pdf::class,
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Svg::class,
         Spatie\MediaLibrary\ImageGenerators\FileTypes\Video::class,
@@ -130,11 +131,20 @@ return [
      * dependency.
      */
     'ffmpeg_path' => env('FFMPEG_PATH', '/usr/bin/ffmpeg'),
-    'ffprobe_path' => env('FFPROBE_PATH', '/usr/bin/ffmpeg'),
+    'ffprobe_path' => env('FFPROBE_PATH', '/usr/bin/ffprobe'),
 
     /*
      * The path where to store temporary files while performing image conversions.
      * If set to null, storage_path('medialibrary/temp') will be used.
      */
     'temporary_directory_path' => null,
+
+    /*
+     * Here you can override the class names of the jobs used by this package. Make sure
+     * your custom jobs extend the ones provided by the package.
+     */
+    'jobs' => [
+        'perform_conversions' => Spatie\MediaLibrary\Jobs\PerformConversions::class,
+        'generate_responsive_images' => Spatie\MediaLibrary\Jobs\GenerateResponsiveImages::class,
+    ],
 ];

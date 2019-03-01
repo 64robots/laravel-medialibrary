@@ -2,8 +2,8 @@
 
 namespace Spatie\MediaLibrary\HasMedia;
 
-use Spatie\MediaLibrary\Conversion\Conversion;
 use Spatie\MediaLibrary\Models\Media;
+use Spatie\MediaLibrary\Conversion\Conversion;
 
 interface HasMedia
 {
@@ -47,7 +47,7 @@ interface HasMedia
      * @param string         $collectionName
      * @param array|callable $filters
      *
-     * @return \Spatie\MediaLibrary\Media
+     * @return \Illuminate\Support\Collection
      */
     public function getMedia(string $collectionName = 'default', $filters = []);
 
@@ -71,7 +71,7 @@ interface HasMedia
     /**
      * Determines if the media files should be preserved when the media object gets deleted.
      *
-     * @return \Spatie\MediaLibrary\Media
+     * @return bool
      */
     public function shouldDeletePreservingMedia();
 
@@ -83,7 +83,6 @@ interface HasMedia
      * @return mixed
      */
     public function loadMedia(string $collectionName);
-
 
     /*
      * Add a conversion.

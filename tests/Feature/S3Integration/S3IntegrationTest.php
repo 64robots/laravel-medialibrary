@@ -3,16 +3,18 @@
 namespace Spatie\MediaLibrary\Tests\Feature\S3Integration;
 
 use Carbon\Carbon;
-use Spatie\MediaLibrary\Tests\TestCase;
+use Aws\S3\S3Client;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
-use Spatie\MediaLibrary\Tests\Feature\S3Integration\S3TestPathGenerator;
+use Spatie\MediaLibrary\Tests\TestCase;
+use Illuminate\Contracts\Filesystem\Factory;
 
 class S3IntegrationTest extends TestCase
 {
     /** @var @string */
     protected $s3BaseDirectory;
 
-    public function setUp()
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -25,7 +27,7 @@ class S3IntegrationTest extends TestCase
         $this->app['config']->set('medialibrary.path_generator', S3TestPathGenerator::class);
     }
 
-    public function tearDown()
+    public function tearDown(): void
     {
         $this->cleanUpS3();
 
@@ -41,7 +43,7 @@ class S3IntegrationTest extends TestCase
             ->addMedia($this->getTestJpg())
             ->toMediaCollection('default', 's3_disk');
 
-        $this->assertTrue(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/test.jpg"));
+        $this->assertS3FileExists("{$this->s3BaseDirectory}/{$media->id}/test.jpg");
     }
 
     /** @test */
@@ -51,8 +53,8 @@ class S3IntegrationTest extends TestCase
             ->addMedia($this->getTestJpg())
             ->toMediaCollection('default', 's3_disk');
 
-        $this->assertTrue(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/test.jpg"));
-        $this->assertTrue(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/conversions/test-thumb.jpg"));
+        $this->assertS3FileExists("{$this->s3BaseDirectory}/{$media->id}/test.jpg");
+        $this->assertS3FileExists("{$this->s3BaseDirectory}/{$media->id}/conversions/test-thumb.jpg");
     }
 
     /** @test */
@@ -62,27 +64,27 @@ class S3IntegrationTest extends TestCase
             ->addMedia($this->getTestJpg())
             ->toMediaCollection('default', 's3_disk');
 
-        $this->assertTrue(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/test.jpg"));
+        $this->assertS3FileExists("{$this->s3BaseDirectory}/{$media->id}/test.jpg");
 
         $media->delete();
 
-        $this->assertFalse(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/test.jpg"));
+        $this->assertS3FileNotExists("{$this->s3BaseDirectory}/{$media->id}/test.jpg");
     }
 
     /** @test */
-    public function it_deletes_file_converions_on_s3()
+    public function it_deletes_file_conversions_on_s3()
     {
         $media = $this->testModelWithConversion
             ->addMedia($this->getTestJpg())
             ->toMediaCollection('default', 's3_disk');
 
-        $this->assertTrue(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/test.jpg"));
-        $this->assertTrue(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/conversions/test-thumb.jpg"));
+        $this->assertS3FileExists("{$this->s3BaseDirectory}/{$media->id}/test.jpg");
+        $this->assertS3FileExists("{$this->s3BaseDirectory}/{$media->id}/conversions/test-thumb.jpg");
 
         $media->delete();
 
-        $this->assertFalse(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/test.jpg"));
-        $this->assertFalse(Storage::disk('s3_disk')->has("{$this->s3BaseDirectory}/{$media->id}/conversions/test-thumb.jpg"));
+        $this->assertS3FileNotExists("{$this->s3BaseDirectory}/{$media->id}/test.jpg");
+        $this->assertS3FileNotExists("{$this->s3BaseDirectory}/{$media->id}/conversions/test-thumb.jpg");
     }
 
     /** @test */
@@ -125,7 +127,7 @@ class S3IntegrationTest extends TestCase
             ->preservingOriginal()
             ->toMediaCollection('default', 's3_disk');
 
-        $this->assertContains(
+        $this->assertStringContainsString(
             "/{$this->s3BaseDirectory}/{$media->id}/test.jpg",
             $media->getTemporaryUrl(Carbon::now()->addMinutes(5))
         );
@@ -155,10 +157,113 @@ class S3IntegrationTest extends TestCase
             ->addMedia($this->getTestJpg())
             ->toMediaCollection('default', 's3_disk');
 
-        $this->assertContains(
+        $this->assertStringContainsString(
             "/{$this->s3BaseDirectory}/{$media->id}/conversions/test-thumb.jpg",
             $media->getTemporaryUrl(Carbon::now()->addMinutes(5), 'thumb')
         );
+    }
+
+    /** @test */
+    public function custom_headers_are_used_for_all_conversions()
+    {
+        $media = $this->testModelWithConversion
+            ->addMedia($this->getTestJpg())
+            ->addCustomHeaders([
+                'ACL' => 'public-read',
+            ])
+            ->toMediaCollection('default', 's3_disk');
+
+        $client = $this->getS3Client();
+
+        /** @var \Aws\Result $responseForMainItem */
+        $responseForMainItem = $client->execute($client->getCommand('GetObjectAcl', [
+            'Bucket' => getenv('AWS_BUCKET'),
+            'Key' => $media->getPath(),
+        ]));
+
+        $this->assertEquals('READ', $responseForMainItem->get('Grants')[1]['Permission'] ?? null);
+
+        /** @var \Aws\Result $responseForConversion */
+        $responseForConversion = $client->execute($client->getCommand('GetObjectAcl', [
+            'Bucket' => getenv('AWS_BUCKET'),
+            'Key' => $media->getPath('thumb'),
+        ]));
+
+        $this->assertEquals('READ', $responseForConversion->get('Grants')[1]['Permission'] ?? null);
+    }
+
+    /** @test */
+    public function it_can_regenerate_only_missing_with_s3_disk()
+    {
+        $mediaExists = $this
+            ->testModelWithConversion
+            ->addMedia($this->getTestJpg())
+            ->toMediaCollection('default', 's3_disk');
+
+        $mediaMissing = $this
+            ->testModelWithConversion
+            ->addMedia($this->getTestPng())
+            ->toMediaCollection('default', 's3_disk');
+
+        $derivedImageExists = "{$this->s3BaseDirectory}/{$mediaExists->id}/conversions/test-thumb.jpg";
+        $derivedMissingImage = "{$this->s3BaseDirectory}/{$mediaMissing->id}/conversions/test-thumb.jpg";
+
+        $existsCreatedAt = Storage::disk('s3_disk')->lastModified($derivedImageExists);
+        $missingCreatedAt = Storage::disk('s3_disk')->lastModified($derivedMissingImage);
+
+        Storage::disk('s3_disk')->delete($derivedMissingImage);
+
+        $this->assertS3FileNotExists($derivedMissingImage);
+
+        sleep(1);
+
+        Artisan::call('medialibrary:regenerate', [
+            '--only-missing' => true,
+        ]);
+
+        $this->assertS3FileExists($derivedMissingImage);
+
+        $this->assertSame($existsCreatedAt, Storage::disk('s3_disk')->lastModified($derivedImageExists));
+        $this->assertGreaterThan($missingCreatedAt, Storage::disk('s3_disk')->lastModified($derivedMissingImage));
+    }
+
+    /** @test */
+    public function it_can_regenerate_only_missing_files_of_named_conversions_with_s3_disk()
+    {
+        $mediaExists = $this
+            ->testModelWithConversion
+            ->addMedia($this->getTestJpg())
+            ->toMediaCollection('images', 's3_disk');
+
+        $mediaMissing = $this
+            ->testModelWithConversion
+            ->addMedia($this->getTestPng())
+            ->toMediaCollection('images', 's3_disk');
+
+        $derivedImageExists = "{$this->s3BaseDirectory}/{$mediaExists->id}/conversions/test-thumb.jpg";
+        $derivedMissingImage = "{$this->s3BaseDirectory}/{$mediaMissing->id}/conversions/test-thumb.jpg";
+        $derivedMissingImageOriginal = "{$this->s3BaseDirectory}/{$mediaMissing->id}/conversions/test-keep_original_format.png";
+
+        $existsCreatedAt = Storage::disk('s3_disk')->lastModified($derivedImageExists);
+        $missingCreatedAt = Storage::disk('s3_disk')->lastModified($derivedMissingImage);
+
+        Storage::disk('s3_disk')->delete($derivedMissingImage);
+        Storage::disk('s3_disk')->delete($derivedMissingImageOriginal);
+
+        $this->assertS3FileNotExists($derivedMissingImage);
+        $this->assertS3FileNotExists($derivedMissingImageOriginal);
+
+        sleep(1);
+
+        Artisan::call('medialibrary:regenerate', [
+            '--only-missing' => true,
+            '--only' => 'thumb',
+        ]);
+
+        $this->assertS3FileExists($derivedMissingImage);
+        $this->assertS3FileNotExists($derivedMissingImageOriginal);
+        $this->assertSame($existsCreatedAt, Storage::disk('s3_disk')->lastModified($derivedImageExists));
+        $this->assertGreaterThan($missingCreatedAt, Storage::disk('s3_disk')->lastModified($derivedMissingImage));
     }
 
     protected function cleanUpS3()
@@ -166,6 +271,27 @@ class S3IntegrationTest extends TestCase
         collect(Storage::disk('s3_disk')->allDirectories(self::getS3BaseTestDirectory()))->each(function ($directory) {
             Storage::disk('s3_disk')->deleteDirectory($directory);
         });
+    }
+
+    protected function getS3Client(): S3Client
+    {
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = app(Factory::class)->disk('s3_disk');
+
+        /** @var \Aws\S3\S3Client $client */
+        $client = $disk->getDriver()->getAdapter()->getClient();
+
+        return $client;
+    }
+
+    protected function assertS3FileExists(string $filePath)
+    {
+        $this->assertTrue(Storage::disk('s3_disk')->has($filePath));
+    }
+
+    protected function assertS3FileNotExists(string $filePath)
+    {
+        $this->assertFalse(Storage::disk('s3_disk')->has($filePath));
     }
 
     public function canTestS3()
